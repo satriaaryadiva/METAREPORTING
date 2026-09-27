@@ -1,0 +1,5 @@
+Install dependency:
+npm install xlsx
+
+Then run:
+npm run dev
