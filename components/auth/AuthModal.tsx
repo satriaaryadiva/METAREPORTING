@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import FacebookLoginButton from "@/components/auth/FacebookLoginButton";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -149,6 +150,22 @@ export default function AuthModal({
 
         {/* Body */}
         <form onSubmit={handleSubmit} className="p-6">
+          {/* Facebook Login – Primary CTA */}
+          <FacebookLoginButton
+            onSuccess={() => {
+              resetForm();
+              onClose();
+            }}
+            onError={(msg) => setErrorMsg(msg)}
+          />
+
+          {/* Divider */}
+          <div className="my-5 flex items-center gap-3">
+            <div className="h-px flex-1 bg-slate-200" />
+            <span className="text-xs font-bold text-slate-400">atau masuk dengan email</span>
+            <div className="h-px flex-1 bg-slate-200" />
+          </div>
+
           {errorMsg && (
             <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-600">
               {errorMsg}

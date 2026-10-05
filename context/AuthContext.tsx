@@ -1,12 +1,14 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { AuthState, LoginPayload, RegisterPayload, User } from "@/types/auth";
+import { AuthState, FacebookLoginPayload, LoginPayload, RegisterPayload, User } from "@/types/auth";
 
 interface AuthContextType extends AuthState {
   login: (payload: LoginPayload) => Promise<{ success: boolean; error?: string }>;
   register: (payload: RegisterPayload) => Promise<{ success: boolean; error?: string }>;
+  loginWithFacebook: (payload: FacebookLoginPayload) => void;
   logout: () => void;
+  fbAccessToken: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -30,9 +32,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // ── Facebook OAuth Login ────────────────────────────────────────
+  const loginWithFacebook = (payload: FacebookLoginPayload) => {
+    const sessionUser: User = {
+      id: `fb_${payload.fbUserId}`,
+      name: payload.name,
+      email: payload.email || `${payload.fbUserId}@facebook.com`,
+      avatarUrl: payload.avatarUrl,
+      role: "Advertiser",
+      createdAt: new Date().toISOString(),
+      fbUserId: payload.fbUserId,
+      fbAccessToken: payload.fbAccessToken,
+      loginMethod: "facebook",
+    };
+
+    setUser(sessionUser);
+    localStorage.setItem(STORAGE_KEY_SESSION, JSON.stringify(sessionUser));
+
+    // Also persist token into autosync settings so AdRules page picks it up
+    try {
+      const existing = localStorage.getItem("meta_report_autosync_settings");
+      const parsed = existing ? JSON.parse(existing) : {};
+      const updated = {
+        ...parsed,
+        meta: {
+          ...(parsed.meta || {}),
+          accessToken: payload.fbAccessToken,
+        },
+      };
+      localStorage.setItem("meta_report_autosync_settings", JSON.stringify(updated));
+    } catch (_) {}
+  };
+
+  // ── Email Login ────────────────────────────────────────────────
   const login = async ({ email, password }: LoginPayload): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true);
-    // Simulate brief network delay
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     try {
@@ -51,7 +85,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: false, error: "Email atau kata sandi tidak ditemukan." };
       }
 
-      // Check password (In production, replace with real backend or Firebase auth)
       if (existingUser.passwordHash && existingUser.passwordHash !== password) {
         setIsLoading(false);
         return { success: false, error: "Kata sandi salah. Silakan coba lagi." };
@@ -64,6 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         avatarUrl: existingUser.avatarUrl,
         role: existingUser.role || "Advertiser",
         createdAt: existingUser.createdAt,
+        loginMethod: "email",
       };
 
       setUser(sessionUser);
@@ -79,6 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // ── Email Register ─────────────────────────────────────────────
   const register = async ({
     name,
     email,
@@ -110,6 +145,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         passwordHash: password,
         role: "Advertiser",
         createdAt: new Date().toISOString(),
+        loginMethod: "email",
       };
 
       registeredUsers.push(newUser);
@@ -121,6 +157,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         email: newUser.email,
         role: newUser.role,
         createdAt: newUser.createdAt,
+        loginMethod: "email",
       };
 
       setUser(sessionUser);
@@ -136,9 +173,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // ── Logout ─────────────────────────────────────────────────────
+  type FBWindow = Window & {
+    FB?: {
+      getLoginStatus: (cb: (r: { status: string }) => void) => void;
+      logout: (cb: () => void) => void;
+    };
+  };
+
   const logout = () => {
     setUser(null);
     localStorage.removeItem(STORAGE_KEY_SESSION);
+    // Sign out from Facebook SDK if available
+    if (typeof window !== "undefined" && (window as FBWindow).FB) {
+      const FB = (window as FBWindow).FB!;
+      FB.getLoginStatus((response) => {
+        if (response.status === "connected") {
+          FB.logout(() => {});
+        }
+      });
+    }
   };
 
   return (
@@ -149,7 +203,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         login,
         register,
+        loginWithFacebook,
         logout,
+        fbAccessToken: user?.fbAccessToken || null,
       }}
     >
       {children}

@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import AuthModal from "@/components/auth/AuthModal";
 import UserProfileMenu from "@/components/auth/UserProfileMenu";
+import FacebookLoginButton from "@/components/auth/FacebookLoginButton";
 
 interface NavbarProps {
   onScreenshot: () => void;
@@ -104,6 +105,12 @@ export default function Navbar({
                 >
                   <span>🎯 Report Campaign</span>
                 </Link>
+                <Link
+                  href="/ad-rules"
+                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition text-slate-600 hover:text-slate-900"
+                >
+                  <span>⚙️ Ad Rules</span>
+                </Link>
               </>
             )}
           </div>
@@ -131,18 +138,15 @@ export default function Navbar({
           {isAuthenticated ? (
             <UserProfileMenu />
           ) : (
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-2">
+              {/* Primary: Facebook Login */}
+              <FacebookLoginButton compact />
+              {/* Secondary: Email login */}
               <button
                 onClick={() => openAuth("login")}
-                className="h-10 rounded-xl border border-slate-300 px-3 text-xs font-bold text-slate-700 transition hover:bg-slate-50"
+                className="h-10 rounded-xl border border-slate-300 px-3 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
               >
-                Masuk
-              </button>
-              <button
-                onClick={() => openAuth("register")}
-                className="h-10 rounded-xl bg-slate-900 px-3 text-xs font-bold text-white transition hover:bg-slate-800"
-              >
-                Daftar
+                Email
               </button>
             </div>
           )}
