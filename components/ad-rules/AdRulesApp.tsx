@@ -624,6 +624,7 @@ interface RuleCardProps {
   onDelete: (id: string) => void;
   onToggle: (id: string) => void;
   onRun: (rule: AdRule) => Promise<void>;
+  onPushToMeta?: (rule: AdRule) => Promise<void>;
   isRunning: boolean;
   lastResult?: ApplyRuleResult | null;
 }
@@ -635,9 +636,11 @@ function RuleCard({
   onDelete,
   onToggle,
   onRun,
+  onPushToMeta,
   isRunning,
   lastResult,
 }: RuleCardProps) {
+  const [isPushing, setIsPushing] = useState(false);
   const linkedAccounts = accounts.filter((a) =>
     rule.accountIds.includes(a.id)
   );
@@ -789,43 +792,60 @@ function RuleCard({
         )}
 
         {/* Actions */}
-        <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
-          <button
-            onClick={() => onRun(rule)}
-            disabled={isRunning || !rule.enabled}
-            className="flex-1 h-9 rounded-xl bg-blue-600 text-xs font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-1.5"
-          >
-            {isRunning ? (
-              <>
-                <span className="h-3.5 w-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                Menjalankan…
-              </>
-            ) : (
-              "▶ Jalankan Sekarang"
-            )}
-          </button>
-          <button
-            onClick={() => onEdit(rule)}
-            className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition text-sm"
-            title="Edit"
-          >
-            ✏️
-          </button>
-          <button
-            onClick={() => {
-              if (
-                window.confirm(
-                  `Hapus rule "${rule.name}"? Tindakan ini tidak bisa dibatalkan.`
-                )
-              ) {
-                onDelete(rule.id);
-              }
-            }}
-            className="h-9 w-9 flex items-center justify-center rounded-xl border border-red-100 text-red-400 hover:bg-red-50 hover:text-red-600 transition text-sm"
-            title="Hapus"
-          >
-            🗑️
-          </button>
+        <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onRun(rule)}
+              disabled={isRunning || !rule.enabled}
+              className="flex-1 h-9 rounded-xl bg-blue-600 text-xs font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-1.5"
+            >
+              {isRunning ? (
+                <>
+                  <span className="h-3.5 w-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                  Menjalankan…
+                </>
+              ) : (
+                "▶ Eksekusi Sekarang"
+              )}
+            </button>
+            <button
+              onClick={() => onEdit(rule)}
+              className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition text-sm"
+              title="Edit"
+            >
+              ✏️
+            </button>
+            <button
+              onClick={() => {
+                if (
+                  window.confirm(
+                    `Hapus rule "${rule.name}"? Tindakan ini tidak bisa dibatalkan.`
+                  )
+                ) {
+                  onDelete(rule.id);
+                }
+              }}
+              className="h-9 w-9 flex items-center justify-center rounded-xl border border-red-100 text-red-400 hover:bg-red-50 hover:text-red-600 transition text-sm"
+              title="Hapus"
+            >
+              🗑️
+            </button>
+          </div>
+
+          {onPushToMeta && (
+            <button
+              onClick={async () => {
+                setIsPushing(true);
+                await onPushToMeta(rule);
+                setIsPushing(false);
+              }}
+              disabled={isPushing}
+              className="w-full h-8 rounded-lg border border-purple-200 bg-purple-50 text-[11px] font-bold text-purple-700 hover:bg-purple-100 transition flex items-center justify-center gap-1"
+              title="Sync & Daftarkan Rule ini ke Meta Ads Manager (Automated Rules)"
+            >
+              {isPushing ? "Menyinkronkan…" : "📤 Sync & Daftarkan ke Meta Ads Manager"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -1008,6 +1028,39 @@ export default function AdRulesApp() {
       );
     } finally {
       setRunningRuleId(null);
+    }
+  };
+
+  // Push rule to Meta's native adrules_library so it shows up in Meta Ads Manager UI
+  const handlePushToMeta = async (rule: AdRule) => {
+    if (!accessToken.trim()) {
+      showStatus("❌ Masukkan Meta Access Token terlebih dahulu.", "error");
+      return;
+    }
+
+    showStatus(`📤 Menyinkronkan rule "${rule.name}" ke Meta Ads Manager…`, "info");
+
+    try {
+      const res = await fetch("/api/ad-rules/sync-meta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessToken: accessToken.trim(), rule }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        showStatus(
+          data.msg || "✅ Rule berhasil didaftarkan langsung ke Meta Ads Manager!",
+          "success"
+        );
+      } else {
+        showStatus(`❌ ${data.error || data.msg || "Gagal sync ke Meta."}`, "error");
+      }
+    } catch (err) {
+      showStatus(
+        `❌ ${err instanceof Error ? err.message : "Error jaringan"}`,
+        "error"
+      );
     }
   };
 
@@ -1350,6 +1403,7 @@ export default function AdRulesApp() {
                     onDelete={handleDeleteRule}
                     onToggle={handleToggleRule}
                     onRun={handleRunRule}
+                    onPushToMeta={handlePushToMeta}
                     isRunning={runningRuleId === rule.id}
                     lastResult={ruleResults[rule.id] || null}
                   />

@@ -89,7 +89,13 @@ export default function CampaignReportApp({
     try {
       const saved = localStorage.getItem("meta_report_autosync_settings");
       if (saved) {
-        setAutoSyncSettings(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        setAutoSyncSettings({
+          ...DEFAULT_SYNC_SETTINGS,
+          ...parsed,
+          meta: { ...DEFAULT_SYNC_SETTINGS.meta, ...(parsed?.meta || {}) },
+          irev: { ...DEFAULT_SYNC_SETTINGS.irev, ...(parsed?.irev || {}) },
+        });
       }
     } catch (e) {
       console.error("Failed to load auto-sync settings", e);

@@ -30,26 +30,26 @@ export default function CampaignSyncModal({
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
   // Meta State
-  const [metaToken, setMetaToken] = useState(autoSyncSettings.meta.accessToken || "");
-  const [metaAccounts, setMetaAccounts] = useState<string[]>(autoSyncSettings.meta.adAccountIds || []);
+  const [metaToken, setMetaToken] = useState(autoSyncSettings?.meta?.accessToken || "");
+  const [metaAccounts, setMetaAccounts] = useState<string[]>(autoSyncSettings?.meta?.adAccountIds || []);
   const [metaDatePreset, setMetaDatePreset] = useState<
     "today" | "yesterday" | "last_3d" | "last_7d" | "this_month" | "last_month" | "maximum"
-  >(autoSyncSettings.meta.datePreset || "today");
-  const [metaEnabled, setMetaEnabled] = useState(autoSyncSettings.meta.enabled ?? true);
+  >(autoSyncSettings?.meta?.datePreset || "today");
+  const [metaEnabled, setMetaEnabled] = useState(autoSyncSettings?.meta?.enabled ?? true);
   const [detectedAccounts, setDetectedAccounts] = useState<DetectedMetaAccount[]>([]);
   const [isDetectingAccounts, setIsDetectingAccounts] = useState(false);
 
   // iRev State
-  const [irevUrl, setIrevUrl] = useState(autoSyncSettings.irev.endpointUrl || "");
-  const [irevKey, setIrevKey] = useState(autoSyncSettings.irev.apiKey || "");
-  const [irevPartnerId, setIrevPartnerId] = useState(autoSyncSettings.irev.partnerId || "");
-  const [irevEnabled, setIrevEnabled] = useState(autoSyncSettings.irev.enabled ?? true);
+  const [irevUrl, setIrevUrl] = useState(autoSyncSettings?.irev?.endpointUrl || "");
+  const [irevKey, setIrevKey] = useState(autoSyncSettings?.irev?.apiKey || "");
+  const [irevPartnerId, setIrevPartnerId] = useState(autoSyncSettings?.irev?.partnerId || "");
+  const [irevEnabled, setIrevEnabled] = useState(autoSyncSettings?.irev?.enabled ?? true);
   const [isTestingIrev, setIsTestingIrev] = useState(false);
-  const [irevConnected, setIrevConnected] = useState(Boolean(autoSyncSettings.irev.endpointUrl));
+  const [irevConnected, setIrevConnected] = useState(Boolean(autoSyncSettings?.irev?.endpointUrl));
 
   // Sync Settings
-  const [intervalMinutes, setIntervalMinutes] = useState(autoSyncSettings.intervalMinutes || 10);
-  const [isAutoSyncActive, setIsAutoSyncActive] = useState(autoSyncSettings.isAutoSyncActive || false);
+  const [intervalMinutes, setIntervalMinutes] = useState(autoSyncSettings?.intervalMinutes || 10);
+  const [isAutoSyncActive, setIsAutoSyncActive] = useState(autoSyncSettings?.isAutoSyncActive || false);
   const [isSyncingAll, setIsSyncingAll] = useState(false);
 
   // Notifications

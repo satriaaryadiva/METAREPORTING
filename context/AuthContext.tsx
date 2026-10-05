@@ -54,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const existing = localStorage.getItem("meta_report_autosync_settings");
       const parsed = existing ? JSON.parse(existing) : {};
       const updated = {
+        irev: { enabled: true, endpointUrl: "", apiKey: "", partnerId: "" },
         ...parsed,
         meta: {
           ...(parsed.meta || {}),
