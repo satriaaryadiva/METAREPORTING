@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     };
 
     const scheduleSpec = {
-      schedule_type: "CONTINUOUS",
+      schedule_type: "SEMI_HOURLY",
     };
 
     for (const rawAccountId of rule.accountIds) {

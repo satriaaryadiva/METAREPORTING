@@ -65,7 +65,7 @@ export default function Navbar({
                 <button
                   onClick={() => onTabChange("account")}
                   className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
-                    currentTab === "account"
+                    currentTab === "account" && pathname !== "/ad-rules"
                       ? "bg-white text-blue-600 shadow-sm"
                       : "text-slate-600 hover:text-slate-900"
                   }`}
@@ -75,20 +75,30 @@ export default function Navbar({
                 <button
                   onClick={() => onTabChange("campaign")}
                   className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
-                    currentTab === "campaign"
+                    currentTab === "campaign" && pathname !== "/ad-rules"
                       ? "bg-white text-blue-600 shadow-sm"
                       : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
                   <span>🎯 Report Campaign</span>
                 </button>
+                <Link
+                  href="/ad-rules"
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                    pathname === "/ad-rules"
+                      ? "bg-white text-blue-600 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <span>⚙️ Ad Rules</span>
+                </Link>
               </>
             ) : (
               <>
                 <Link
                   href="/"
                   className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
-                    currentTab === "account"
+                    pathname === "/" || currentTab === "account"
                       ? "bg-white text-blue-600 shadow-sm"
                       : "text-slate-600 hover:text-slate-900"
                   }`}
@@ -98,7 +108,7 @@ export default function Navbar({
                 <Link
                   href="/report-campaign"
                   className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
-                    currentTab === "campaign"
+                    pathname?.includes("campaign")
                       ? "bg-white text-blue-600 shadow-sm"
                       : "text-slate-600 hover:text-slate-900"
                   }`}
@@ -107,7 +117,11 @@ export default function Navbar({
                 </Link>
                 <Link
                   href="/ad-rules"
-                  className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition text-slate-600 hover:text-slate-900"
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                    pathname === "/ad-rules"
+                      ? "bg-white text-blue-600 shadow-sm"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
                 >
                   <span>⚙️ Ad Rules</span>
                 </Link>

@@ -31,6 +31,7 @@ export default function CampaignSyncModal({
 
   // Meta State
   const [metaToken, setMetaToken] = useState(autoSyncSettings?.meta?.accessToken || "");
+  const [bmId, setBmId] = useState("");
   const [metaAccounts, setMetaAccounts] = useState<string[]>(autoSyncSettings?.meta?.adAccountIds || []);
   const [metaDatePreset, setMetaDatePreset] = useState<
     "today" | "yesterday" | "last_3d" | "last_7d" | "this_month" | "last_month" | "maximum"
@@ -75,7 +76,10 @@ export default function CampaignSyncModal({
       const res = await fetch("/api/sync/meta/accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessToken: metaToken.trim() }),
+        body: JSON.stringify({
+          accessToken: metaToken.trim(),
+          businessId: bmId.trim() || undefined,
+        }),
       });
       const data = await res.json();
       setIsDetectingAccounts(false);
@@ -435,36 +439,51 @@ export default function CampaignSyncModal({
                 </ol>
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-black uppercase text-slate-800">
-                    Meta Access Token
-                  </label>
-                  <a
-                    href="https://developers.facebook.com/tools/explorer/"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-[11px] font-bold text-blue-600 hover:underline"
-                  >
-                    Buka Graph Explorer ↗
-                  </a>
-                </div>
-                <div className="flex gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-black uppercase text-slate-800">
+                      Meta Access Token
+                    </label>
+                    <a
+                      href="https://developers.facebook.com/tools/explorer/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] font-bold text-blue-600 hover:underline"
+                    >
+                      Graph Explorer ↗
+                    </a>
+                  </div>
                   <input
                     type="password"
                     value={metaToken}
                     onChange={(e) => setMetaToken(e.target.value)}
                     placeholder="Tempel EAABw... di sini"
-                    className="h-10 flex-1 rounded-xl border border-slate-300 px-3 text-xs font-mono outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition"
+                    className="h-10 w-full rounded-xl border border-slate-300 px-3 text-xs font-mono outline-none focus:border-blue-500 transition"
                   />
-                  <button
-                    type="button"
-                    onClick={handleDetectMetaAccounts}
-                    disabled={isDetectingAccounts || !metaToken.trim()}
-                    className="rounded-xl bg-blue-600 px-4 text-xs font-black text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-xs whitespace-nowrap"
-                  >
-                    {isDetectingAccounts ? "Mendeteksi..." : "⚡ Deteksi Akun"}
-                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-black uppercase text-slate-800 mb-1">
+                    BM ID <span className="text-slate-400 font-normal lowercase">(opsional)</span>
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={bmId}
+                      onChange={(e) => setBmId(e.target.value)}
+                      placeholder="BM ID (misal: 12345678)"
+                      className="h-10 flex-1 rounded-xl border border-slate-300 px-3 text-xs font-mono outline-none focus:border-blue-500 transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleDetectMetaAccounts}
+                      disabled={isDetectingAccounts || !metaToken.trim()}
+                      className="rounded-xl bg-blue-600 px-4 text-xs font-black text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-xs whitespace-nowrap"
+                    >
+                      {isDetectingAccounts ? "Mendeteksi..." : "⚡ Deteksi Akun"}
+                    </button>
+                  </div>
                 </div>
               </div>
 

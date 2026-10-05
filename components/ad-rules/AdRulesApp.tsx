@@ -861,6 +861,7 @@ const LS_TOKEN_KEY = "meta_report_autosync_settings";
 export default function AdRulesApp() {
   const { fbAccessToken } = useAuth();
   const [accessToken, setAccessToken] = useState("");
+  const [businessId, setBusinessId] = useState("");
   const [accounts, setAccounts] = useState<AdAccount[]>([]);
   const [isFetchingAccounts, setIsFetchingAccounts] = useState(false);
   const [fetchError, setFetchError] = useState("");
@@ -928,7 +929,10 @@ export default function AdRulesApp() {
       const res = await fetch("/api/sync/meta/accounts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessToken: accessToken.trim() }),
+        body: JSON.stringify({
+          accessToken: accessToken.trim(),
+          businessId: businessId.trim() || undefined,
+        }),
       });
       const data = await res.json();
 
@@ -1183,12 +1187,28 @@ export default function AdRulesApp() {
 
               <div className="space-y-3">
                 <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Meta Access Token
+                  </label>
                   <textarea
                     value={accessToken}
                     onChange={(e) => setAccessToken(e.target.value)}
                     placeholder="EAAxxxxxxxxxxxxxxx..."
                     rows={3}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-xs font-mono text-slate-800 outline-none focus:border-blue-500 transition resize-none"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-mono text-slate-800 outline-none focus:border-blue-500 transition resize-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Business Manager (BM) ID <span className="text-slate-400 font-normal">(Opsional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={businessId}
+                    onChange={(e) => setBusinessId(e.target.value)}
+                    placeholder="Contoh: 123456789012345"
+                    className="w-full h-9 rounded-xl border border-slate-300 px-3 text-xs font-mono text-slate-800 outline-none focus:border-blue-500 transition"
                   />
                 </div>
 
