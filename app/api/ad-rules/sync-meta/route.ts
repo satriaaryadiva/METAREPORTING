@@ -24,10 +24,16 @@ export async function POST(req: NextRequest) {
     const syncedAccounts: string[] = [];
     const errors: string[] = [];
 
-    // Map rule to Meta adrules_library format
     const entityType = rule.level; // AD, ADSET, CAMPAIGN
     const primaryCond = rule.conditions[0];
-    const metricField = primaryCond?.metric === "cpr" ? "cost_per_result" : primaryCond?.metric || "spend";
+    let metricField = "spent";
+    if (primaryCond?.metric === "spend") {
+      metricField = "spent";
+    } else if (primaryCond?.metric === "cpr") {
+      metricField = "cost_per_result";
+    } else if (primaryCond?.metric) {
+      metricField = primaryCond.metric;
+    }
     const operator = primaryCond?.operator || "GREATER_THAN";
     const val = primaryCond?.value || 0;
 
