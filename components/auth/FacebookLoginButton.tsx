@@ -165,13 +165,13 @@ export default function FacebookLoginButton({
           // Fetch user profile
           win.FB!.api(
             "/me",
-            { fields: "id,name,email,picture.type(large)" },
+            { fields: "id,name,picture.type(large)" },
             (userInfo) => {
               loginWithFacebook({
                 fbUserId: userID,
                 fbAccessToken: accessToken,
                 name: userInfo.name || `FB User ${userID}`,
-                email: userInfo.email,
+                email: `${userID}@facebook.user`,
                 avatarUrl: userInfo.picture?.data?.url,
               });
               setIsLoading(false);
@@ -189,7 +189,7 @@ export default function FacebookLoginButton({
         }
       },
       {
-        scope: "ads_read,ads_management,business_management,email,public_profile",
+        scope: "public_profile,ads_read,ads_management",
         return_scopes: true,
       }
     );
