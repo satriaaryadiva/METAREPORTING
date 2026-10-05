@@ -15,7 +15,9 @@ import {
 } from "@/types/ad-rules";
 import { useAuth } from "@/context/AuthContext";
 import Link from "next/link";
-import FacebookLoginButton from "@/components/auth/FacebookLoginButton";
+import Stepper, { AD_RULES_STEPS } from "@/components/Stepper";
+import ConnectionCard from "@/components/ConnectionCard";
+import AccountPicker, { usdAccountIds } from "@/components/AccountPicker";
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -113,6 +115,15 @@ function makeRule(
   };
 }
 
+function currencySummary(accounts: AdAccount[]): string {
+  const counts = new Map<string, number>();
+  accounts.forEach((a) => counts.set(a.currency, (counts.get(a.currency) || 0) + 1));
+  const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+  if (entries.length === 0) return "";
+  if (entries.length === 1) return entries[0][0];
+  return `${entries[0][0]} +${entries.length - 1}`;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Sub-components
 // ──────────────────────────────────────────────────────────────────────────────
@@ -120,17 +131,10 @@ function makeRule(
 function StatusBadge({ enabled }: { enabled: boolean }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${
-        enabled
-          ? "bg-emerald-100 text-emerald-700"
-          : "bg-slate-100 text-slate-500"
-      }`}
-    >
-      <span
-        className={`h-1.5 w-1.5 rounded-full ${
-          enabled ? "bg-emerald-500" : "bg-slate-400"
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold ${enabled ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
         }`}
-      />
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${enabled ? "bg-emerald-500" : "bg-slate-400"}`} />
       {enabled ? "Aktif" : "Nonaktif"}
     </span>
   );
@@ -142,24 +146,13 @@ interface ConditionEditorProps {
 }
 function ConditionEditor({ conditions, onChange }: ConditionEditorProps) {
   const addCondition = () => {
-    onChange([
-      ...conditions,
-      { metric: "spend", operator: "GREATER_THAN", value: 0 },
-    ]);
+    onChange([...conditions, { metric: "spend", operator: "GREATER_THAN", value: 0 }]);
   };
   const removeCondition = (i: number) => {
     onChange(conditions.filter((_, idx) => idx !== i));
   };
-  const updateCondition = (
-    i: number,
-    field: keyof RuleCondition,
-    value: string | number
-  ) => {
-    onChange(
-      conditions.map((c, idx) =>
-        idx === i ? { ...c, [field]: value } : c
-      )
-    );
+  const updateCondition = (i: number, field: keyof RuleCondition, value: string | number) => {
+    onChange(conditions.map((c, idx) => (idx === i ? { ...c, [field]: value } : c)));
   };
 
   return (
@@ -174,9 +167,7 @@ function ConditionEditor({ conditions, onChange }: ConditionEditorProps) {
           </span>
           <select
             value={cond.metric}
-            onChange={(e) =>
-              updateCondition(i, "metric", e.target.value as RuleMetric)
-            }
+            onChange={(e) => updateCondition(i, "metric", e.target.value as RuleMetric)}
             className="flex-1 min-w-[160px] h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800 outline-none focus:border-blue-500"
           >
             {(Object.keys(METRIC_LABELS) as RuleMetric[]).map((m) => (
@@ -187,30 +178,20 @@ function ConditionEditor({ conditions, onChange }: ConditionEditorProps) {
           </select>
           <select
             value={cond.operator}
-            onChange={(e) =>
-              updateCondition(
-                i,
-                "operator",
-                e.target.value as RuleConditionOperator
-              )
-            }
+            onChange={(e) => updateCondition(i, "operator", e.target.value as RuleConditionOperator)}
             className="w-[72px] h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-center font-bold text-slate-800 outline-none focus:border-blue-500"
           >
-            {(Object.keys(OPERATOR_LABELS) as RuleConditionOperator[]).map(
-              (op) => (
-                <option key={op} value={op}>
-                  {OPERATOR_LABELS[op]}
-                </option>
-              )
-            )}
+            {(Object.keys(OPERATOR_LABELS) as RuleConditionOperator[]).map((op) => (
+              <option key={op} value={op}>
+                {OPERATOR_LABELS[op]}
+              </option>
+            ))}
           </select>
           <input
             type="number"
             step="0.01"
             value={cond.value}
-            onChange={(e) =>
-              updateCondition(i, "value", parseFloat(e.target.value) || 0)
-            }
+            onChange={(e) => updateCondition(i, "value", parseFloat(e.target.value) || 0)}
             className="w-24 h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-800 outline-none focus:border-blue-500"
           />
           <button
@@ -240,6 +221,7 @@ interface RuleFormModalProps {
   onSave: (rule: AdRule) => void;
   accounts: AdAccount[];
   editingRule?: AdRule | null;
+  defaultAccountIds: string[];
 }
 
 function RuleFormModal({
@@ -248,6 +230,7 @@ function RuleFormModal({
   onSave,
   accounts,
   editingRule,
+  defaultAccountIds,
 }: RuleFormModalProps) {
   const [name, setName] = useState("");
   const [preset, setPreset] = useState<RulePreset>("custom");
@@ -278,10 +261,12 @@ function RuleFormModal({
       setAction("PAUSE_AD");
       setLevel("AD");
       setTimeWindow("today");
-      setSelectedAccountIds(accounts.map((a) => a.id));
+      // New rules default to the working account set chosen in step 2,
+      // not automatically every fetched account.
+      setSelectedAccountIds(defaultAccountIds);
       setEnabled(true);
     }
-  }, [editingRule, accounts, isOpen]);
+  }, [editingRule, defaultAccountIds, isOpen]);
 
   const applyPreset = (p: RulePreset) => {
     setPreset(p);
@@ -298,12 +283,6 @@ function RuleFormModal({
       setLevel(PRESET_CPR_GUARD.level);
       setTimeWindow(PRESET_CPR_GUARD.timeWindow);
     }
-  };
-
-  const toggleAccount = (id: string) => {
-    setSelectedAccountIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
   };
 
   const handleSave = () => {
@@ -373,42 +352,24 @@ function RuleFormModal({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {(
                 [
-                  {
-                    key: "content_test",
-                    label: "📸 Tes Konten",
-                    desc: "Spend > $8 → Ad OFF",
-                    color: "orange",
-                  },
-                  {
-                    key: "cpr_guard",
-                    label: "🛡️ Jaga CPR",
-                    desc: "CPR > $3.5 → Ad OFF",
-                    color: "red",
-                  },
-                  {
-                    key: "custom",
-                    label: "✏️ Custom",
-                    desc: "Buat kondisi sendiri",
-                    color: "blue",
-                  },
+                  { key: "content_test", label: "📸 Tes Konten", desc: "Spend > $8 → Ad OFF", color: "orange" },
+                  { key: "cpr_guard", label: "🛡️ Jaga CPR", desc: "CPR > $3.5 → Ad OFF", color: "red" },
+                  { key: "custom", label: "✏️ Custom", desc: "Buat kondisi sendiri", color: "blue" },
                 ] as const
               ).map((p) => (
                 <button
                   key={p.key}
                   onClick={() => applyPreset(p.key)}
-                  className={`rounded-xl border-2 p-3 text-left transition ${
-                    preset === p.key
+                  className={`rounded-xl border-2 p-3 text-left transition ${preset === p.key
                       ? p.color === "orange"
                         ? "border-orange-400 bg-orange-50"
                         : p.color === "red"
-                        ? "border-red-400 bg-red-50"
-                        : "border-blue-400 bg-blue-50"
+                          ? "border-red-400 bg-red-50"
+                          : "border-blue-400 bg-blue-50"
                       : "border-slate-200 hover:border-slate-300 bg-white"
-                  }`}
+                    }`}
                 >
-                  <div className="text-sm font-bold text-slate-800">
-                    {p.label}
-                  </div>
+                  <div className="text-sm font-bold text-slate-800">{p.label}</div>
                   <div className="text-xs text-slate-500 mt-0.5">{p.desc}</div>
                 </button>
               ))}
@@ -417,9 +378,7 @@ function RuleFormModal({
 
           {/* Rule Name */}
           <div>
-            <label className="text-sm font-bold text-slate-700 block mb-1">
-              Nama Rule
-            </label>
+            <label className="text-sm font-bold text-slate-700 block mb-1">Nama Rule</label>
             <input
               type="text"
               value={name}
@@ -431,21 +390,14 @@ function RuleFormModal({
 
           {/* Conditions */}
           <div>
-            <label className="text-sm font-bold text-slate-700 block mb-2">
-              Kondisi (AND logic)
-            </label>
-            <ConditionEditor
-              conditions={conditions}
-              onChange={setConditions}
-            />
+            <label className="text-sm font-bold text-slate-700 block mb-2">Kondisi (AND logic)</label>
+            <ConditionEditor conditions={conditions} onChange={setConditions} />
           </div>
 
           {/* Action / Level / TimeWindow */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1 uppercase tracking-wide">
-                Aksi
-              </label>
+              <label className="text-xs font-bold text-slate-600 block mb-1 uppercase tracking-wide">Aksi</label>
               <select
                 value={action}
                 onChange={(e) => setAction(e.target.value as RuleAction)}
@@ -460,9 +412,7 @@ function RuleFormModal({
             </div>
 
             <div>
-              <label className="text-xs font-bold text-slate-600 block mb-1 uppercase tracking-wide">
-                Level
-              </label>
+              <label className="text-xs font-bold text-slate-600 block mb-1 uppercase tracking-wide">Level</label>
               <select
                 value={level}
                 onChange={(e) => setLevel(e.target.value as RuleLevel)}
@@ -497,79 +447,15 @@ function RuleFormModal({
           {/* Account Selection */}
           {accounts.length > 0 && (
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-sm font-bold text-slate-700">
-                  Ad Account yang Diterapkan
-                </label>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() =>
-                      setSelectedAccountIds(accounts.map((a) => a.id))
-                    }
-                    className="text-xs font-bold text-blue-600 hover:underline"
-                  >
-                    Pilih Semua
-                  </button>
-                  <span className="text-slate-300">|</span>
-                  <button
-                    onClick={() => setSelectedAccountIds([])}
-                    className="text-xs font-bold text-slate-500 hover:underline"
-                  >
-                    Hapus Semua
-                  </button>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto rounded-xl border border-slate-200 p-3">
-                {accounts.map((acc) => {
-                  const isSelected = selectedAccountIds.includes(acc.id);
-                  return (
-                    <button
-                      key={acc.id}
-                      onClick={() => toggleAccount(acc.id)}
-                      className={`flex items-center gap-2.5 rounded-lg border p-2.5 text-left transition ${
-                        isSelected
-                          ? "border-blue-300 bg-blue-50"
-                          : "border-slate-200 bg-white hover:border-slate-300"
-                      }`}
-                    >
-                      <div
-                        className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded border-2 transition ${
-                          isSelected
-                            ? "border-blue-600 bg-blue-600"
-                            : "border-slate-300 bg-white"
-                        }`}
-                      >
-                        {isSelected && (
-                          <svg
-                            className="h-3 w-3 text-white"
-                            viewBox="0 0 12 12"
-                            fill="none"
-                          >
-                            <polyline
-                              points="1.5,6 4.5,9 10.5,3"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-slate-800 truncate">
-                          {acc.name}
-                        </div>
-                        <div className="text-[11px] text-slate-400 truncate">
-                          {acc.id}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="mt-1 text-xs text-slate-400">
-                {selectedAccountIds.length} dari {accounts.length} akun dipilih
-              </p>
+              <label className="text-sm font-bold text-slate-700 block mb-2">
+                Ad Account yang Diterapkan
+              </label>
+              <AccountPicker
+                accounts={accounts}
+                selected={selectedAccountIds}
+                onChange={setSelectedAccountIds}
+                compact
+              />
             </div>
           )}
 
@@ -577,14 +463,12 @@ function RuleFormModal({
           <div className="flex items-center gap-3">
             <button
               onClick={() => setEnabled((prev) => !prev)}
-              className={`relative h-6 w-11 rounded-full transition-colors ${
-                enabled ? "bg-blue-600" : "bg-slate-300"
-              }`}
+              className={`relative h-6 w-11 rounded-full transition-colors ${enabled ? "bg-blue-600" : "bg-slate-300"
+                }`}
             >
               <span
-                className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                  enabled ? "translate-x-5" : "translate-x-0"
-                }`}
+                className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${enabled ? "translate-x-5" : "translate-x-0"
+                  }`}
               />
             </button>
             <span className="text-sm font-semibold text-slate-700">
@@ -619,14 +503,17 @@ function RuleFormModal({
 interface RuleCardProps {
   rule: AdRule;
   accounts: AdAccount[];
-  accessToken: string;
   onEdit: (rule: AdRule) => void;
   onDelete: (id: string) => void;
   onToggle: (id: string) => void;
-  onRun: (rule: AdRule) => Promise<void>;
+  onPreview: (rule: AdRule) => Promise<void>;
+  onConfirmRun: (rule: AdRule) => Promise<void>;
+  onClearPreview: (id: string) => void;
   onPushToMeta?: (rule: AdRule) => Promise<void>;
   isRunning: boolean;
+  isPreviewing: boolean;
   lastResult?: ApplyRuleResult | null;
+  previewResult?: ApplyRuleResult | null;
 }
 
 function RuleCard({
@@ -635,45 +522,41 @@ function RuleCard({
   onEdit,
   onDelete,
   onToggle,
-  onRun,
+  onPreview,
+  onConfirmRun,
+  onClearPreview,
   onPushToMeta,
   isRunning,
+  isPreviewing,
   lastResult,
+  previewResult,
 }: RuleCardProps) {
   const [isPushing, setIsPushing] = useState(false);
-  const linkedAccounts = accounts.filter((a) =>
-    rule.accountIds.includes(a.id)
-  );
+  const linkedAccounts = accounts.filter((a) => rule.accountIds.includes(a.id));
+  const currencyLabel = currencySummary(linkedAccounts);
 
   const presetColor =
     rule.preset === "content_test"
       ? { bg: "bg-orange-50", border: "border-orange-200", badge: "bg-orange-100 text-orange-700" }
       : rule.preset === "cpr_guard"
-      ? { bg: "bg-red-50", border: "border-red-200", badge: "bg-red-100 text-red-700" }
-      : { bg: "bg-blue-50", border: "border-blue-200", badge: "bg-blue-100 text-blue-700" };
+        ? { bg: "bg-red-50", border: "border-red-200", badge: "bg-red-100 text-red-700" }
+        : { bg: "bg-blue-50", border: "border-blue-200", badge: "bg-blue-100 text-blue-700" };
 
   const presetLabel =
-    rule.preset === "content_test"
-      ? "Tes Konten"
-      : rule.preset === "cpr_guard"
-      ? "Jaga CPR"
-      : "Custom";
+    rule.preset === "content_test" ? "Tes Konten" : rule.preset === "cpr_guard" ? "Jaga CPR" : "Custom";
 
   return (
     <div
-      className={`rounded-2xl border-2 ${presetColor.border} ${
-        rule.enabled ? "" : "opacity-60"
-      } bg-white shadow-sm overflow-hidden`}
+      className={`rounded-2xl border-2 ${presetColor.border} ${rule.enabled ? "" : "opacity-60"
+        } bg-white shadow-sm overflow-hidden`}
     >
-      {/* Top accent bar */}
       <div
-        className={`h-1 w-full ${
-          rule.preset === "content_test"
+        className={`h-1 w-full ${rule.preset === "content_test"
             ? "bg-gradient-to-r from-orange-400 to-amber-400"
             : rule.preset === "cpr_guard"
-            ? "bg-gradient-to-r from-red-500 to-rose-400"
-            : "bg-gradient-to-r from-blue-500 to-indigo-500"
-        }`}
+              ? "bg-gradient-to-r from-red-500 to-rose-400"
+              : "bg-gradient-to-r from-blue-500 to-indigo-500"
+          }`}
       />
 
       <div className="p-5">
@@ -681,28 +564,21 @@ function RuleCard({
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span
-                className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${presetColor.badge}`}
-              >
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${presetColor.badge}`}>
                 {presetLabel}
               </span>
               <StatusBadge enabled={rule.enabled} />
             </div>
-            <h3 className="mt-1.5 text-sm font-black text-slate-900 leading-snug">
-              {rule.name}
-            </h3>
+            <h3 className="mt-1.5 text-sm font-black text-slate-900 leading-snug">{rule.name}</h3>
           </div>
-          {/* Toggle */}
           <button
             onClick={() => onToggle(rule.id)}
-            className={`relative mt-0.5 h-6 w-11 flex-shrink-0 rounded-full transition-colors ${
-              rule.enabled ? "bg-blue-600" : "bg-slate-300"
-            }`}
+            className={`relative mt-0.5 h-6 w-11 flex-shrink-0 rounded-full transition-colors ${rule.enabled ? "bg-blue-600" : "bg-slate-300"
+              }`}
           >
             <span
-              className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${
-                rule.enabled ? "translate-x-5" : "translate-x-0"
-              }`}
+              className={`absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${rule.enabled ? "translate-x-5" : "translate-x-0"
+                }`}
             />
           </button>
         </div>
@@ -710,27 +586,16 @@ function RuleCard({
         {/* Conditions */}
         <div className="mb-3 space-y-1.5">
           {rule.conditions.map((cond, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs"
-            >
-              <span className="text-slate-400 font-medium">
-                {i === 0 ? "Jika" : "Dan"}
-              </span>
-              <span className="font-bold text-slate-700">
-                {METRIC_LABELS[cond.metric]}
-              </span>
-              <span className="font-black text-slate-800">
-                {OPERATOR_LABELS[cond.operator]}
-              </span>
+            <div key={i} className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs">
+              <span className="text-slate-400 font-medium">{i === 0 ? "Jika" : "Dan"}</span>
+              <span className="font-bold text-slate-700">{METRIC_LABELS[cond.metric]}</span>
+              <span className="font-black text-slate-800">{OPERATOR_LABELS[cond.operator]}</span>
               <span className="font-black text-blue-700">{cond.value}</span>
             </div>
           ))}
           <div className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs">
             <span className="text-slate-400 font-medium">Maka</span>
-            <span className="font-bold text-slate-700">
-              {ACTION_LABELS[rule.action]}
-            </span>
+            <span className="font-bold text-slate-700">{ACTION_LABELS[rule.action]}</span>
             <span className="ml-auto text-slate-400 font-medium">
               {LEVEL_LABELS[rule.level]} · {TIME_LABELS[rule.timeWindow]}
             </span>
@@ -738,30 +603,73 @@ function RuleCard({
         </div>
 
         {/* Accounts */}
-        <div className="mb-4">
-          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1.5">
-            Ad Account ({linkedAccounts.length})
+        <div className="mb-4 flex items-center justify-between">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+            {linkedAccounts.length} akun{currencyLabel ? ` · ${currencyLabel}` : ""}
           </p>
-          <div className="flex flex-wrap gap-1">
-            {linkedAccounts.slice(0, 3).map((acc) => (
+          <div className="flex flex-wrap gap-1 justify-end">
+            {linkedAccounts.slice(0, 2).map((acc) => (
               <span
                 key={acc.id}
-                className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-600 truncate max-w-[140px]"
+                className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-600 truncate max-w-[110px]"
                 title={acc.name}
               >
                 {acc.name}
               </span>
             ))}
-            {linkedAccounts.length > 3 && (
+            {linkedAccounts.length > 2 && (
               <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-500">
-                +{linkedAccounts.length - 3} lagi
+                +{linkedAccounts.length - 2}
               </span>
             )}
           </div>
         </div>
 
-        {/* Last result */}
-        {lastResult && lastResult.affectedItems.length > 0 && (
+        {/* Preview (dry run) panel — shown before any real execution happens */}
+        {previewResult && (
+          <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
+            <p className="text-xs font-bold text-blue-800 mb-1">
+              👁 Preview: {previewResult.triggeredCount} ad akan terkena dampak
+            </p>
+            <div className="space-y-1 max-h-28 overflow-y-auto mb-2">
+              {previewResult.affectedItems.length === 0 && (
+                <p className="text-[11px] text-blue-600">Tidak ada ad yang memenuhi kondisi saat ini.</p>
+              )}
+              {previewResult.affectedItems.slice(0, 6).map((item, i) => (
+                <div key={i} className="flex items-center gap-1.5 text-[11px]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-blue-400" />
+                  <span className="text-slate-700 truncate flex-1">{item.name}</span>
+                  <span className="text-slate-400 font-mono">
+                    {item.metric}={item.metricValue.toFixed(2)}
+                  </span>
+                </div>
+              ))}
+              {previewResult.affectedItems.length > 6 && (
+                <p className="text-[11px] text-blue-500">
+                  +{previewResult.affectedItems.length - 6} ad lainnya…
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onClearPreview(rule.id)}
+                className="h-8 flex-1 rounded-lg border border-slate-300 bg-white text-[11px] font-bold text-slate-600 hover:bg-slate-50 transition"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => onConfirmRun(rule)}
+                disabled={isRunning || previewResult.triggeredCount === 0}
+                className="h-8 flex-1 rounded-lg bg-blue-600 text-[11px] font-bold text-white hover:bg-blue-700 disabled:opacity-50 transition"
+              >
+                {isRunning ? "Menjalankan…" : "✅ Jalankan Sekarang"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Last real run result */}
+        {!previewResult && lastResult && lastResult.affectedItems.length > 0 && (
           <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50 p-2.5">
             <p className="text-xs font-bold text-emerald-700 mb-1">
               ✅ Terakhir Dijalankan: {lastResult.triggeredCount} item terpengaruh
@@ -769,23 +677,15 @@ function RuleCard({
             <div className="space-y-1 max-h-24 overflow-y-auto">
               {lastResult.affectedItems.slice(0, 5).map((item, i) => (
                 <div key={i} className="flex items-center gap-1.5 text-[11px]">
-                  <span
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      item.success ? "bg-emerald-400" : "bg-red-400"
-                    }`}
-                  />
-                  <span className="text-slate-600 truncate flex-1">
-                    {item.name}
-                  </span>
+                  <span className={`h-1.5 w-1.5 rounded-full ${item.success ? "bg-emerald-400" : "bg-red-400"}`} />
+                  <span className="text-slate-600 truncate flex-1">{item.name}</span>
                   <span className="text-slate-400 font-mono">
                     {item.metric}={item.metricValue.toFixed(2)}
                   </span>
                 </div>
               ))}
               {lastResult.affectedItems.length > 5 && (
-                <p className="text-[11px] text-slate-400">
-                  +{lastResult.affectedItems.length - 5} item lainnya…
-                </p>
+                <p className="text-[11px] text-slate-400">+{lastResult.affectedItems.length - 5} item lainnya…</p>
               )}
             </div>
           </div>
@@ -793,46 +693,44 @@ function RuleCard({
 
         {/* Actions */}
         <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => onRun(rule)}
-              disabled={isRunning || !rule.enabled}
-              className="flex-1 h-9 rounded-xl bg-blue-600 text-xs font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-1.5"
-            >
-              {isRunning ? (
-                <>
-                  <span className="h-3.5 w-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                  Menjalankan…
-                </>
-              ) : (
-                "▶ Eksekusi Sekarang"
-              )}
-            </button>
-            <button
-              onClick={() => onEdit(rule)}
-              className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition text-sm"
-              title="Edit"
-            >
-              ✏️
-            </button>
-            <button
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Hapus rule "${rule.name}"? Tindakan ini tidak bisa dibatalkan.`
-                  )
-                ) {
-                  onDelete(rule.id);
-                }
-              }}
-              className="h-9 w-9 flex items-center justify-center rounded-xl border border-red-100 text-red-400 hover:bg-red-50 hover:text-red-600 transition text-sm"
-              title="Hapus"
-            >
-              🗑️
-            </button>
-          </div>
+          {!previewResult && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onPreview(rule)}
+                disabled={isPreviewing || !rule.enabled}
+                className="flex-1 h-9 rounded-xl border-2 border-blue-200 bg-blue-50 text-xs font-bold text-blue-700 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-1.5"
+              >
+                {isPreviewing ? (
+                  <>
+                    <span className="h-3.5 w-3.5 rounded-full border-2 border-blue-400 border-t-transparent animate-spin" />
+                    Memuat Preview…
+                  </>
+                ) : (
+                  "👁 Preview"
+                )}
+              </button>
+              <button
+                onClick={() => onEdit(rule)}
+                className="h-9 w-9 flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition text-sm"
+                title="Edit"
+              >
+                ✏️
+              </button>
+              <button
+                onClick={() => {
+                  if (window.confirm(`Hapus rule "${rule.name}"? Tindakan ini tidak bisa dibatalkan.`)) {
+                    onDelete(rule.id);
+                  }
+                }}
+                className="h-9 w-9 flex items-center justify-center rounded-xl border border-red-100 text-red-400 hover:bg-red-50 hover:text-red-600 transition text-sm"
+                title="Hapus"
+              >
+                🗑️
+              </button>
+            </div>
+          )}
 
-          {onPushToMeta && (
+          {onPushToMeta && !previewResult && (
             <button
               onClick={async () => {
                 setIsPushing(true);
@@ -865,24 +763,27 @@ export default function AdRulesApp() {
   const [accounts, setAccounts] = useState<AdAccount[]>([]);
   const [isFetchingAccounts, setIsFetchingAccounts] = useState(false);
   const [fetchError, setFetchError] = useState("");
+  // Step 2: the working set of accounts the user has chosen to operate on.
+  // Defaults to USD accounts once fetched, matching the green/amber badges.
+  const [workingAccountIds, setWorkingAccountIds] = useState<string[]>([]);
   const [rules, setRules] = useState<AdRule[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<AdRule | null>(null);
   const [runningRuleId, setRunningRuleId] = useState<string | null>(null);
+  const [previewingRuleId, setPreviewingRuleId] = useState<string | null>(null);
   const [ruleResults, setRuleResults] = useState<Record<string, ApplyRuleResult>>({});
+  const [previewResults, setPreviewResults] = useState<Record<string, ApplyRuleResult>>({});
   const [globalStatus, setGlobalStatus] = useState<{
     msg: string;
     type: "success" | "error" | "info";
   } | null>(null);
 
-  // Auto-populate token from Facebook login session if available
   useEffect(() => {
     if (fbAccessToken) {
       setAccessToken(fbAccessToken);
     }
   }, [fbAccessToken]);
 
-  // Load token from existing autosync settings
   useEffect(() => {
     try {
       const saved = localStorage.getItem(LS_TOKEN_KEY);
@@ -892,22 +793,21 @@ export default function AdRulesApp() {
           setAccessToken((prev) => prev || parsed.meta.accessToken);
         }
       }
-    } catch (_) {}
+    } catch (_) { }
 
     try {
       const savedRules = localStorage.getItem(LS_RULES_KEY);
       if (savedRules) {
         setRules(JSON.parse(savedRules));
       }
-    } catch (_) {}
+    } catch (_) { }
   }, []);
 
-  // Persist rules to localStorage
   const persistRules = useCallback((newRules: AdRule[]) => {
     setRules(newRules);
     try {
       localStorage.setItem(LS_RULES_KEY, JSON.stringify(newRules));
-    } catch (_) {}
+    } catch (_) { }
   }, []);
 
   const showStatus = (msg: string, type: "success" | "error" | "info") => {
@@ -915,7 +815,6 @@ export default function AdRulesApp() {
     setTimeout(() => setGlobalStatus(null), 5000);
   };
 
-  // Fetch Ad Accounts
   const handleFetchAccounts = async () => {
     if (!accessToken.trim()) {
       setFetchError("Masukkan Meta Access Token terlebih dahulu.");
@@ -937,27 +836,21 @@ export default function AdRulesApp() {
       const data = await res.json();
 
       if (data.success && Array.isArray(data.data)) {
-        const activeAccounts = data.data.filter(
-          (a: AdAccount) => a.status === "ACTIVE"
-        );
+        const activeAccounts = data.data.filter((a: AdAccount) => a.status === "ACTIVE");
         setAccounts(activeAccounts);
-        showStatus(
-          `✅ ${activeAccounts.length} Ad Account aktif berhasil dimuat`,
-          "success"
-        );
+        // Step 2 default: pre-select USD accounts as the working set.
+        setWorkingAccountIds(usdAccountIds(activeAccounts));
+        showStatus(`✅ ${activeAccounts.length} Ad Account aktif berhasil dimuat`, "success");
       } else {
         setFetchError(data.error || "Gagal memuat Ad Account.");
       }
     } catch (err) {
-      setFetchError(
-        err instanceof Error ? err.message : "Terjadi kesalahan jaringan."
-      );
+      setFetchError(err instanceof Error ? err.message : "Terjadi kesalahan jaringan.");
     } finally {
       setIsFetchingAccounts(false);
     }
   };
 
-  // Save rule
   const handleSaveRule = (rule: AdRule) => {
     const exists = rules.some((r) => r.id === rule.id);
     let updated: AdRule[];
@@ -972,6 +865,11 @@ export default function AdRulesApp() {
 
   const handleDeleteRule = (id: string) => {
     persistRules(rules.filter((r) => r.id !== id));
+    setPreviewResults((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
     showStatus("🗑️ Rule berhasil dihapus", "info");
   };
 
@@ -982,68 +880,98 @@ export default function AdRulesApp() {
     persistRules(updated);
   };
 
-  // Run a rule
-  const handleRunRule = async (rule: AdRule) => {
+  /**
+   * Core executor. dryRun=true calls the same apply endpoint but never mutates
+   * the ad account (server-side), and we store the result separately as a
+   * preview rather than touching the rule's lastRunAt/triggeredCount metadata.
+   */
+  const executeRule = async (rule: AdRule, dryRun: boolean) => {
     if (!accessToken.trim()) {
       showStatus("❌ Masukkan Meta Access Token terlebih dahulu.", "error");
       return;
     }
 
-    setRunningRuleId(rule.id);
-    showStatus(`▶ Menjalankan rule "${rule.name}"…`, "info");
+    if (dryRun) {
+      setPreviewingRuleId(rule.id);
+    } else {
+      setRunningRuleId(rule.id);
+    }
 
     try {
       const res = await fetch("/api/ad-rules/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessToken: accessToken.trim(), rule }),
+        body: JSON.stringify({ accessToken: accessToken.trim(), rule, dryRun }),
       });
       const data = await res.json();
 
       if (data.success && data.data) {
         const result: ApplyRuleResult = data.data;
-        setRuleResults((prev) => ({ ...prev, [rule.id]: result }));
 
-        // Update rule metadata
-        const updated = rules.map((r) =>
-          r.id === rule.id
-            ? {
+        if (dryRun) {
+          setPreviewResults((prev) => ({ ...prev, [rule.id]: result }));
+          showStatus(
+            `👁 Preview: ${result.triggeredCount} ad akan terkena dampak jika dijalankan`,
+            "info"
+          );
+        } else {
+          setRuleResults((prev) => ({ ...prev, [rule.id]: result }));
+          const updated = rules.map((r) =>
+            r.id === rule.id
+              ? {
                 ...r,
                 lastRunAt: new Date().toISOString(),
                 triggeredCount: (r.triggeredCount || 0) + result.triggeredCount,
                 lastResult: `${result.triggeredCount} item terpengaruh`,
                 updatedAt: new Date().toISOString(),
               }
-            : r
-        );
-        persistRules(updated);
-
-        showStatus(
-          `✅ Rule selesai dijalankan: ${result.triggeredCount} item terpengaruh`,
-          "success"
-        );
+              : r
+          );
+          persistRules(updated);
+          setPreviewResults((prev) => {
+            const next = { ...prev };
+            delete next[rule.id];
+            return next;
+          });
+          showStatus(`✅ Rule selesai dijalankan: ${result.triggeredCount} item terpengaruh`, "success");
+        }
       } else {
         showStatus(`❌ ${data.error || "Gagal menjalankan rule."}`, "error");
       }
     } catch (err) {
-      showStatus(
-        `❌ ${err instanceof Error ? err.message : "Error tidak diketahui"}`,
-        "error"
-      );
+      showStatus(`❌ ${err instanceof Error ? err.message : "Error tidak diketahui"}`, "error");
     } finally {
       setRunningRuleId(null);
+      setPreviewingRuleId(null);
     }
   };
 
-  // Push rule to Meta's native adrules_library so it shows up in Meta Ads Manager UI
+  const handlePreviewRule = (rule: AdRule) => executeRule(rule, true);
+
+  const handleConfirmRun = async (rule: AdRule) => {
+    const preview = previewResults[rule.id];
+    const count = preview?.triggeredCount ?? 0;
+    const confirmed = window.confirm(
+      `${count} ad akan dimatikan. Tindakan ini tidak bisa diurungkan otomatis. Lanjutkan?`
+    );
+    if (!confirmed) return;
+    await executeRule(rule, false);
+  };
+
+  const handleClearPreview = (id: string) => {
+    setPreviewResults((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
   const handlePushToMeta = async (rule: AdRule) => {
     if (!accessToken.trim()) {
       showStatus("❌ Masukkan Meta Access Token terlebih dahulu.", "error");
       return;
     }
-
     showStatus(`📤 Menyinkronkan rule "${rule.name}" ke Meta Ads Manager…`, "info");
-
     try {
       const res = await fetch("/api/ad-rules/sync-meta", {
         method: "POST",
@@ -1051,64 +979,67 @@ export default function AdRulesApp() {
         body: JSON.stringify({ accessToken: accessToken.trim(), rule }),
       });
       const data = await res.json();
-
       if (data.success) {
-        showStatus(
-          data.msg || "✅ Rule berhasil didaftarkan langsung ke Meta Ads Manager!",
-          "success"
-        );
+        showStatus(data.msg || "✅ Rule berhasil didaftarkan langsung ke Meta Ads Manager!", "success");
       } else {
         showStatus(`❌ ${data.error || data.msg || "Gagal sync ke Meta."}`, "error");
       }
     } catch (err) {
-      showStatus(
-        `❌ ${err instanceof Error ? err.message : "Error jaringan"}`,
-        "error"
-      );
+      showStatus(`❌ ${err instanceof Error ? err.message : "Error jaringan"}`, "error");
     }
   };
 
-  // Run all enabled rules sequentially
   const handleRunAllRules = async () => {
     const enabledRules = rules.filter((r) => r.enabled);
     if (!enabledRules.length) {
       showStatus("Tidak ada rule aktif untuk dijalankan.", "info");
       return;
     }
+    const confirmed = window.confirm(
+      `Ini akan menjalankan ${enabledRules.length} rule aktif tanpa preview individual. Lanjutkan?`
+    );
+    if (!confirmed) return;
     showStatus(`▶ Menjalankan ${enabledRules.length} rule…`, "info");
     for (const rule of enabledRules) {
-      await handleRunRule(rule);
+      await executeRule(rule, false);
     }
     showStatus("✅ Semua rule selesai dijalankan.", "success");
   };
 
   const handleAddPreset = (preset: "content_test" | "cpr_guard") => {
-    const allIds = accounts.map((a) => a.id);
+    const ids = workingAccountIds.length > 0 ? workingAccountIds : accounts.map((a) => a.id);
     const base = preset === "content_test" ? PRESET_CONTENT_TEST : PRESET_CPR_GUARD;
-    const rule = makeRule(preset, allIds, base);
+    const rule = makeRule(preset, ids, base);
     const updated = [rule, ...rules];
     persistRules(updated);
-    showStatus(`✅ Rule "${rule.name}" berhasil ditambahkan!`, "success");
+    showStatus(`✅ Rule "${rule.name}" berhasil ditambahkan (${ids.length} akun)!`, "success");
   };
+
+  // Stepper progress: 1 Hubungkan → 2 Pilih Akun → 3 Atur Rule → 4 Preview & Jalankan
+  const currentStep =
+    accounts.length === 0
+      ? 1
+      : workingAccountIds.length === 0
+        ? 2
+        : rules.length === 0
+          ? 3
+          : 4;
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/20 pb-16">
       <div className="mx-auto w-full max-w-[1400px] px-4 py-5 sm:px-6 lg:px-8">
         {/* ── Navbar ─────────────────────────────────────────── */}
-        <div className="mb-5 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+        <div className="mb-3 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-600 text-sm font-black text-white">
               M
             </span>
             <div>
-              <h1 className="text-xl font-black tracking-tight text-slate-900">
-                Meta Ads Report
-              </h1>
+              <h1 className="text-xl font-black tracking-tight text-slate-900">Meta Ads Report</h1>
               <p className="text-xs text-slate-500">Ad Rules – Otomasi Iklan Cerdas</p>
             </div>
           </div>
 
-          {/* Page Navigation */}
           <div className="flex items-center rounded-xl bg-slate-100 p-1">
             <Link
               href="/"
@@ -1145,141 +1076,68 @@ export default function AdRulesApp() {
           )}
         </div>
 
+        {/* ── Stepper ──────────────────────────────────────────── */}
+        <div className="mb-5 rounded-2xl border border-slate-200 bg-white px-5 py-3 shadow-sm">
+          <Stepper currentStep={currentStep} steps={AD_RULES_STEPS} />
+        </div>
+
         {/* ── Global Status Toast ─────────────────────────────── */}
         {globalStatus && (
           <div
-            className={`mb-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${
-              globalStatus.type === "success"
+            className={`mb-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${globalStatus.type === "success"
                 ? "border-emerald-300 bg-emerald-50 text-emerald-800"
                 : globalStatus.type === "error"
-                ? "border-red-300 bg-red-50 text-red-800"
-                : "border-blue-300 bg-blue-50 text-blue-800"
-            }`}
+                  ? "border-red-300 bg-red-50 text-red-800"
+                  : "border-blue-300 bg-blue-50 text-blue-800"
+              }`}
           >
             {globalStatus.msg}
-            <button
-              onClick={() => setGlobalStatus(null)}
-              className="ml-auto text-slate-400 hover:text-slate-600"
-            >
+            <button onClick={() => setGlobalStatus(null)} className="ml-auto text-slate-400 hover:text-slate-600">
               ×
             </button>
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[380px_1fr]">
-          {/* ── Left Panel: Token + Accounts ─────────────────── */}
+        <div className="grid grid-cols-1 gap-5 xl:grid-cols-[360px_1fr]">
+          {/* ── Left Panel: Connection + Accounts ───────────────── */}
           <div className="space-y-4">
-            {/* Token Card */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-100 text-sm">
-                  🔑
-                </span>
-                <div>
-                  <h2 className="text-sm font-black text-slate-900">
-                    Meta Access Token
-                  </h2>
-                  <p className="text-xs text-slate-500">
-                    Untuk fetch Ad Account aktif
-                  </p>
-                </div>
-              </div>
+            <ConnectionCard
+              accessToken={accessToken}
+              setAccessToken={setAccessToken}
+              businessId={businessId}
+              setBusinessId={setBusinessId}
+              onFetch={handleFetchAccounts}
+              isFetching={isFetchingAccounts}
+              error={fetchError}
+              connectedCount={accounts.length}
+            />
 
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                    Meta Access Token
-                  </label>
-                  <textarea
-                    value={accessToken}
-                    onChange={(e) => setAccessToken(e.target.value)}
-                    placeholder="EAAxxxxxxxxxxxxxxx..."
-                    rows={3}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-xs font-mono text-slate-800 outline-none focus:border-blue-500 transition resize-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                    Business Manager (BM) ID <span className="text-slate-400 font-normal">(Opsional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={businessId}
-                    onChange={(e) => setBusinessId(e.target.value)}
-                    placeholder="Contoh: 123456789012345"
-                    className="w-full h-9 rounded-xl border border-slate-300 px-3 text-xs font-mono text-slate-800 outline-none focus:border-blue-500 transition"
-                  />
-                </div>
-
-                {fetchError && (
-                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-                    ❌ {fetchError}
-                  </div>
-                )}
-
-                <button
-                  onClick={handleFetchAccounts}
-                  disabled={isFetchingAccounts}
-                  className="w-full h-10 rounded-xl bg-blue-600 text-sm font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-50 transition flex items-center justify-center gap-2"
-                >
-                  {isFetchingAccounts ? (
-                    <>
-                      <span className="h-4 w-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                      Memuat Akun…
-                    </>
-                  ) : (
-                    "🔍 Fetch Ad Accounts Aktif"
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Accounts List */}
+            {/* Step 2: working account set */}
             {accounts.length > 0 && (
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-sm font-black text-slate-900">
-                    Ad Account Aktif
-                  </h2>
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
-                    {accounts.length} akun
+                  <h2 className="text-sm font-black text-slate-900">Pilih Akun Kerja</h2>
+                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-700">
+                    {workingAccountIds.length} dipilih
                   </span>
                 </div>
-                <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
-                  {accounts.map((acc) => (
-                    <div
-                      key={acc.id}
-                      className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5"
-                    >
-                      <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-600 text-xs font-black text-white">
-                        {acc.name.charAt(0).toUpperCase()}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold text-slate-800 truncate">
-                          {acc.name}
-                        </p>
-                        <p className="text-[10px] text-slate-400 font-mono">
-                          {acc.id} · {acc.currency}
-                        </p>
-                      </div>
-                      <span className="ml-auto flex-shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-600">
-                        ●
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                <p className="text-xs text-slate-500 mb-3">
+                  Akun ini jadi default saat kamu membuat rule baru atau pakai Template Cepat.
+                </p>
+                <AccountPicker
+                  accounts={accounts}
+                  selected={workingAccountIds}
+                  onChange={setWorkingAccountIds}
+                />
               </div>
             )}
 
             {/* Quick Add Presets */}
             {accounts.length > 0 && (
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h2 className="text-sm font-black text-slate-900 mb-1">
-                  Tambah Rule Cepat
-                </h2>
+                <h2 className="text-sm font-black text-slate-900 mb-1">Tambah Rule Cepat</h2>
                 <p className="text-xs text-slate-500 mb-3">
-                  Template siap pakai, berlaku ke semua akun
+                  Template siap pakai, berlaku ke {workingAccountIds.length || accounts.length} akun terpilih
                 </p>
                 <div className="space-y-2">
                   <button
@@ -1288,12 +1146,8 @@ export default function AdRulesApp() {
                   >
                     <span className="text-xl">📸</span>
                     <div>
-                      <div className="text-xs font-black text-orange-800">
-                        Tes Konten
-                      </div>
-                      <div className="text-[11px] text-orange-600">
-                        Spend &gt; $8 → Ad OFF
-                      </div>
+                      <div className="text-xs font-black text-orange-800">Tes Konten</div>
+                      <div className="text-[11px] text-orange-600">Spend &gt; $8 → Ad OFF</div>
                     </div>
                     <span className="ml-auto text-orange-400 font-black">+</span>
                   </button>
@@ -1304,12 +1158,8 @@ export default function AdRulesApp() {
                   >
                     <span className="text-xl">🛡️</span>
                     <div>
-                      <div className="text-xs font-black text-red-800">
-                        Jaga CPR
-                      </div>
-                      <div className="text-[11px] text-red-600">
-                        CPR &gt; $3.5 → Ad OFF
-                      </div>
+                      <div className="text-xs font-black text-red-800">Jaga CPR</div>
+                      <div className="text-[11px] text-red-600">CPR &gt; $3.5 → Ad OFF</div>
                     </div>
                     <span className="ml-auto text-red-400 font-black">+</span>
                   </button>
@@ -1323,12 +1173,8 @@ export default function AdRulesApp() {
                   >
                     <span className="text-xl">✏️</span>
                     <div>
-                      <div className="text-xs font-black text-blue-800">
-                        Custom Rule
-                      </div>
-                      <div className="text-[11px] text-blue-600">
-                        Buat kondisi sendiri
-                      </div>
+                      <div className="text-xs font-black text-blue-800">Custom Rule</div>
+                      <div className="text-[11px] text-blue-600">Buat kondisi sendiri</div>
                     </div>
                     <span className="ml-auto text-blue-400 font-black">+</span>
                   </button>
@@ -1339,18 +1185,14 @@ export default function AdRulesApp() {
 
           {/* ── Right Panel: Rules ─────────────────────────────── */}
           <div>
-            {/* Header */}
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-black text-slate-900">
-                  Rules Aktif
-                </h2>
+                <h2 className="text-lg font-black text-slate-900">Rules</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {rules.length === 0
                     ? "Belum ada rule. Buat rule pertama Anda."
-                    : `${rules.filter((r) => r.enabled).length} aktif · ${
-                        rules.filter((r) => !r.enabled).length
-                      } nonaktif`}
+                    : `${rules.filter((r) => r.enabled).length} aktif · ${rules.filter((r) => !r.enabled).length
+                    } nonaktif`}
                 </p>
               </div>
               <button
@@ -1364,21 +1206,16 @@ export default function AdRulesApp() {
               </button>
             </div>
 
-            {/* Empty State */}
             {rules.length === 0 && (
               <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-white py-20">
                 <div className="mb-3 text-5xl">⚙️</div>
-                <h3 className="text-base font-black text-slate-800 mb-1">
-                  Belum Ada Rule
-                </h3>
+                <h3 className="text-base font-black text-slate-800 mb-1">Belum Ada Rule</h3>
                 <p className="text-sm text-slate-500 mb-5 text-center max-w-xs">
-                  Buat rule untuk otomatis mematikan iklan atau memantau
-                  performa berdasarkan kondisi yang kamu tentukan.
+                  Buat rule untuk otomatis mematikan iklan atau memantau performa berdasarkan kondisi yang kamu
+                  tentukan.
                 </p>
                 {accounts.length === 0 ? (
-                  <p className="text-xs text-slate-400">
-                    Fetch Ad Account terlebih dahulu di panel kiri →
-                  </p>
+                  <p className="text-xs text-slate-400">Hubungkan akun Meta di panel kiri →</p>
                 ) : (
                   <div className="flex gap-2">
                     <button
@@ -1407,7 +1244,6 @@ export default function AdRulesApp() {
               </div>
             )}
 
-            {/* Rules Grid */}
             {rules.length > 0 && (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3">
                 {rules.map((rule) => (
@@ -1415,17 +1251,20 @@ export default function AdRulesApp() {
                     key={rule.id}
                     rule={rule}
                     accounts={accounts}
-                    accessToken={accessToken}
                     onEdit={(r) => {
                       setEditingRule(r);
                       setIsFormOpen(true);
                     }}
                     onDelete={handleDeleteRule}
                     onToggle={handleToggleRule}
-                    onRun={handleRunRule}
+                    onPreview={handlePreviewRule}
+                    onConfirmRun={handleConfirmRun}
+                    onClearPreview={handleClearPreview}
                     onPushToMeta={handlePushToMeta}
                     isRunning={runningRuleId === rule.id}
+                    isPreviewing={previewingRuleId === rule.id}
                     lastResult={ruleResults[rule.id] || null}
+                    previewResult={previewResults[rule.id] || null}
                   />
                 ))}
               </div>
@@ -1434,7 +1273,6 @@ export default function AdRulesApp() {
         </div>
       </div>
 
-      {/* ── Rule Form Modal ──────────────────────────────────── */}
       <RuleFormModal
         isOpen={isFormOpen}
         onClose={() => {
@@ -1444,6 +1282,7 @@ export default function AdRulesApp() {
         onSave={handleSaveRule}
         accounts={accounts}
         editingRule={editingRule}
+        defaultAccountIds={workingAccountIds}
       />
     </main>
   );

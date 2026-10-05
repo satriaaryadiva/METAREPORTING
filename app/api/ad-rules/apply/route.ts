@@ -1,11 +1,8 @@
+// app/api/ad-rules/apply/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { AdRule, ApplyRuleResult, RuleMetric } from "@/types/ad-rules";
 
-interface MetaAdItem {
-  id: string;
-  name: string;
-  effective_status: string;
-}
+const GRAPH = "https://graph.facebook.com/v20.0";
 
 interface MetaInsightItem {
   ad_id?: string;
@@ -22,6 +19,14 @@ interface MetaInsightItem {
   actions?: { action_type: string; value: string }[];
 }
 
+function getResults(insight: MetaInsightItem): number {
+  const actions = insight.actions || [];
+  const reg = actions.find(
+    (a) => a.action_type.includes("registration") || a.action_type === "lead"
+  );
+  return reg ? parseInt(reg.value, 10) || 0 : 0;
+}
+
 function getMetricValue(insight: MetaInsightItem, metric: RuleMetric): number {
   switch (metric) {
     case "spend":
@@ -33,25 +38,12 @@ function getMetricValue(insight: MetaInsightItem, metric: RuleMetric): number {
     case "ctr":
       return parseFloat(insight.ctr || "0") || 0;
     case "impressions":
-      return parseInt(insight.impressions || "0") || 0;
-    case "results": {
-      const actions = insight.actions || [];
-      const reg = actions.find(
-        (a) =>
-          a.action_type.includes("registration") ||
-          a.action_type === "lead"
-      );
-      return reg ? parseInt(reg.value, 10) || 0 : 0;
-    }
+      return parseInt(insight.impressions || "0", 10) || 0;
+    case "results":
+      return getResults(insight);
     case "cpr": {
       const spend = parseFloat(insight.spend || "0") || 0;
-      const actions = insight.actions || [];
-      const reg = actions.find(
-        (a) =>
-          a.action_type.includes("registration") ||
-          a.action_type === "lead"
-      );
-      const results = reg ? parseInt(reg.value, 10) || 0 : 0;
+      const results = getResults(insight);
       return results > 0 ? spend / results : 0;
     }
     default:
@@ -59,26 +51,40 @@ function getMetricValue(insight: MetaInsightItem, metric: RuleMetric): number {
   }
 }
 
-function evaluateConditions(
-  value: number,
-  rule: AdRule
-): boolean {
-  return rule.conditions.every((cond) => {
-    switch (cond.operator) {
-      case "GREATER_THAN":
-        return value > cond.value;
-      case "GREATER_THAN_OR_EQUAL":
-        return value >= cond.value;
-      case "LESS_THAN":
-        return value < cond.value;
-      case "LESS_THAN_OR_EQUAL":
-        return value <= cond.value;
-      case "EQUALS":
-        return value === cond.value;
-      default:
-        return false;
+function compare(value: number, operator: string, target: number): boolean {
+  switch (operator) {
+    case "GREATER_THAN":
+      return value > target;
+    case "GREATER_THAN_OR_EQUAL":
+      return value >= target;
+    case "LESS_THAN":
+      return value < target;
+    case "LESS_THAN_OR_EQUAL":
+      return value <= target;
+    case "EQUALS":
+      return value === target;
+    default:
+      return false;
+  }
+}
+
+// Ambil semua halaman insights
+async function fetchAllInsights(firstUrl: string): Promise<MetaInsightItem[]> {
+  const all: MetaInsightItem[] = [];
+  let url: string | null = firstUrl;
+  let guard = 0;
+
+  while (url && guard < 20) {
+    const res: Response = await fetch(url, { cache: "no-store" });
+    const json = await res.json();
+    if (json.error) {
+      throw new Error(json.error.message || "Gagal mengambil insights.");
     }
-  });
+    all.push(...(json.data || []));
+    url = json.paging?.next || null;
+    guard++;
+  }
+  return all;
 }
 
 export async function POST(req: NextRequest) {
@@ -100,26 +106,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (!rule.enabled) {
+      return NextResponse.json(
+        { success: false, error: "Rule nonaktif. Aktifkan dulu sebelum dijalankan." },
+        { status: 400 }
+      );
+    }
+
+    if (!rule.conditions?.length) {
+      return NextResponse.json(
+        { success: false, error: "Rule tidak punya kondisi." },
+        { status: 400 }
+      );
+    }
+
     const token = accessToken.trim();
-    const level = rule.level.toLowerCase() + "s"; // ads, adsets, campaigns
-    const datePreset = rule.timeWindow;
+    const levelLower = rule.level.toLowerCase(); // ad, adset, campaign
 
-    // Determine fields based on conditions
-    const metricFields = [
-      "spend",
-      "cpc",
-      "cpm",
-      "ctr",
-      "impressions",
-      "actions",
-    ].join(",");
-
+    const metricFields = "spend,cpc,cpm,ctr,impressions,actions";
     const itemIdField =
       rule.level === "AD"
         ? "ad_id,ad_name"
         : rule.level === "ADSET"
-        ? "adset_id,adset_name"
-        : "campaign_id,campaign_name";
+          ? "adset_id,adset_name"
+          : "campaign_id,campaign_name";
 
     const results: ApplyRuleResult = {
       ruleId: rule.id,
@@ -128,147 +138,117 @@ export async function POST(req: NextRequest) {
       triggeredCount: 0,
       runAt: new Date().toISOString(),
     };
+    const errors: string[] = [];
 
     for (const rawAccountId of rule.accountIds) {
-      const accountId = rawAccountId.trim().startsWith("act_")
-        ? rawAccountId.trim()
-        : `act_${rawAccountId.trim()}`;
+      const trimmed = rawAccountId.trim();
+      const accountId = trimmed.startsWith("act_") ? trimmed : `act_${trimmed}`;
 
       try {
-        // 1. Fetch insights for this account at the rule level
-        const insightsUrl = new URL(
-          `https://graph.facebook.com/v20.0/${accountId}/insights`
-        );
+        // 1. Insights, hanya entitas yang masih ACTIVE
+        const insightsUrl = new URL(`${GRAPH}/${accountId}/insights`);
         insightsUrl.searchParams.set("access_token", token);
-        insightsUrl.searchParams.set(
-          "level",
-          rule.level.toLowerCase()
-        );
-        insightsUrl.searchParams.set(
-          "fields",
-          `${itemIdField},${metricFields}`
-        );
-        insightsUrl.searchParams.set("date_preset", datePreset);
+        insightsUrl.searchParams.set("level", levelLower);
+        insightsUrl.searchParams.set("fields", `${itemIdField},${metricFields}`);
+        insightsUrl.searchParams.set("date_preset", rule.timeWindow);
         insightsUrl.searchParams.set("limit", "500");
+        insightsUrl.searchParams.set(
+          "filtering",
+          JSON.stringify([
+            {
+              field: `${levelLower}.effective_status`,
+              operator: "IN",
+              value: ["ACTIVE"],
+            },
+          ])
+        );
 
-        const insightsRes = await fetch(insightsUrl.toString(), {
-          next: { revalidate: 0 },
-        });
-        const insightsJson = await insightsRes.json();
+        const items = await fetchAllInsights(insightsUrl.toString());
 
-        if (insightsJson.error) {
-          throw new Error(
-            insightsJson.error.message || `Error pada akun ${accountId}`
-          );
-        }
-
-        const items: MetaInsightItem[] = insightsJson.data || [];
-
-        // 2. For each item, check conditions
+        // 2. Cek kondisi per item (AND)
         for (const item of items) {
-          const itemId =
-            item.ad_id || item.adset_id || item.campaign_id || "";
+          const itemId = item.ad_id || item.adset_id || item.campaign_id || "";
           const itemName =
             item.ad_name || item.adset_name || item.campaign_name || itemId;
+          if (!itemId) continue;
 
-          // Evaluate all conditions (AND logic)
-          let allMet = true;
-          let primaryMetricValue = 0;
-          let primaryMetricName = rule.conditions[0]?.metric || "spend";
+          const primaryMetricName = rule.conditions[0].metric;
+          const primaryMetricValue = getMetricValue(item, primaryMetricName);
 
-          for (const cond of rule.conditions) {
-            const val = getMetricValue(item, cond.metric);
-            if (cond.metric === primaryMetricName) primaryMetricValue = val;
-            if (!evaluateConditions(val, { ...rule, conditions: [cond] })) {
-              allMet = false;
-              break;
-            }
-          }
-
+          const allMet = rule.conditions.every((cond) =>
+            compare(getMetricValue(item, cond.metric), cond.operator, cond.value)
+          );
           if (!allMet) continue;
 
-          // 3. Conditions met → apply action
+          const baseItem = {
+            id: itemId,
+            name: itemName,
+            accountId,
+            metric: primaryMetricName,
+            metricValue: primaryMetricValue,
+            action: rule.action,
+          };
+
+          // 3a. Notifikasi saja
           if (rule.action === "SEND_NOTIFICATION") {
-            results.affectedItems.push({
-              id: itemId,
-              name: itemName,
-              accountId,
-              metric: primaryMetricName,
-              metricValue: primaryMetricValue,
-              action: rule.action,
-              success: true,
-            });
+            results.affectedItems.push({ ...baseItem, success: true });
             results.triggeredCount++;
             continue;
           }
 
-          // Pause action
-          let pauseEndpoint = "";
-          if (rule.action === "PAUSE_AD") {
-            pauseEndpoint = `https://graph.facebook.com/v20.0/${item.ad_id}`;
-          } else if (rule.action === "PAUSE_ADSET") {
-            pauseEndpoint = `https://graph.facebook.com/v20.0/${item.adset_id}`;
-          } else if (rule.action === "PAUSE_CAMPAIGN") {
-            pauseEndpoint = `https://graph.facebook.com/v20.0/${item.campaign_id}`;
-          }
+          // 3b. Pause. itemId sudah sesuai level rule
+          try {
+            const pauseRes = await fetch(`${GRAPH}/${itemId}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/x-www-form-urlencoded" },
+              body: new URLSearchParams({
+                access_token: token,
+                status: "PAUSED",
+              }),
+              cache: "no-store",
+            });
+            const pauseJson = await pauseRes.json();
 
-          if (pauseEndpoint && itemId) {
-            try {
-              const pauseRes = await fetch(
-                `${pauseEndpoint}?access_token=${token}&status=PAUSED`,
-                { method: "POST", next: { revalidate: 0 } }
-              );
-              const pauseJson = await pauseRes.json();
-
-              if (pauseJson.success || pauseJson.id) {
-                results.affectedItems.push({
-                  id: itemId,
-                  name: itemName,
-                  accountId,
-                  metric: primaryMetricName,
-                  metricValue: primaryMetricValue,
-                  action: rule.action,
-                  success: true,
-                });
-                results.triggeredCount++;
-              } else {
-                results.affectedItems.push({
-                  id: itemId,
-                  name: itemName,
-                  accountId,
-                  metric: primaryMetricName,
-                  metricValue: primaryMetricValue,
-                  action: rule.action,
-                  success: false,
-                  error: pauseJson.error?.message || "Unknown error",
-                });
-              }
-            } catch (e) {
+            if (pauseJson.success || pauseJson.id) {
+              results.affectedItems.push({ ...baseItem, success: true });
+              results.triggeredCount++;
+            } else {
               results.affectedItems.push({
-                id: itemId,
-                name: itemName,
-                accountId,
-                metric: primaryMetricName,
-                metricValue: primaryMetricValue,
-                action: rule.action,
+                ...baseItem,
                 success: false,
-                error: e instanceof Error ? e.message : "Pause failed",
+                error: pauseJson.error?.message || "Unknown error",
               });
             }
+          } catch (e) {
+            results.affectedItems.push({
+              ...baseItem,
+              success: false,
+              error: e instanceof Error ? e.message : "Pause failed",
+            });
           }
         }
       } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Error tidak diketahui";
         console.error(`Error processing ${accountId}:`, err);
+        errors.push(`${accountId}: ${msg}`);
       }
+    }
+
+    // Kalau semua akun gagal dan tidak ada hasil, kembalikan error yang jelas
+    if (errors.length > 0 && results.affectedItems.length === 0) {
+      return NextResponse.json(
+        { success: false, error: errors.slice(0, 3).join(" | ") },
+        { status: 502 }
+      );
     }
 
     return NextResponse.json({
       success: true,
       data: results,
+      errors, // akun yang gagal (opsional ditampilkan di UI)
     });
   } catch (err: unknown) {
-    const msg =
-      err instanceof Error ? err.message : "Server error saat apply rule.";
+    const msg = err instanceof Error ? err.message : "Server error saat apply rule.";
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
 }
