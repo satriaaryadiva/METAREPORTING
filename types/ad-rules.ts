@@ -9,10 +9,15 @@ export interface AdAccount {
 
 // ─── Rule Types ──────────────────────────────────────────────────────────────
 export type RuleConditionOperator = "GREATER_THAN" | "LESS_THAN" | "EQUALS" | "GREATER_THAN_OR_EQUAL" | "LESS_THAN_OR_EQUAL";
-export type RuleMetric = "spend" | "cpr" | "cpc" | "cpm" | "ctr" | "impressions" | "results";
+export type RuleMetric = "spent" | "cpr" | "cpc" | "cpm" | "ctr" | "impressions" | "results";
 export type RuleAction = "PAUSE_AD" | "PAUSE_ADSET" | "PAUSE_CAMPAIGN" | "SEND_NOTIFICATION";
 export type RuleLevel = "AD" | "ADSET" | "CAMPAIGN";
 export type RuleTimeWindow = "today" | "last_3d" | "last_7d" | "this_month";
+
+// Matches Meta's native "Edit rule" Schedule section.
+// "continuous" = "Continuously" (runs ~every 30-60 min).
+// "daily" = "Daily between X and Y" (dailyFromHour/dailyToHour, 0-23, Jakarta Time).
+export type RuleSchedule = "continuous" | "daily";
 
 export interface RuleCondition {
   metric: RuleMetric;
@@ -32,6 +37,13 @@ export interface AdRule {
   action: RuleAction;
   level: RuleLevel;
   timeWindow: RuleTimeWindow;
+  // Matches Meta's native "Schedule" section. Defaults to "continuous" when absent
+  // (keeps old persisted rules, which predate this field, working unchanged).
+  schedule?: RuleSchedule;
+  dailyFromHour?: number; // 0-23, only used when schedule === "daily"
+  dailyToHour?: number;   // 0-23, only used when schedule === "daily"
+  // Matches Meta's native "Notification → On Facebook" checkbox.
+  notifyOnFacebook?: boolean;
   createdAt: string;
   updatedAt: string;
   // Result tracking

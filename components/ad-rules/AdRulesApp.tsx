@@ -10,6 +10,7 @@ import {
   RuleAction,
   RuleLevel,
   RuleTimeWindow,
+  RuleSchedule,
   RuleCondition,
   ApplyRuleResult,
 } from "@/types/ad-rules";
@@ -19,6 +20,11 @@ import Stepper, { AD_RULES_STEPS } from "@/components/Stepper";
 import ConnectionCard from "@/components/ConnectionCard";
 import AccountPicker, { usdAccountIds } from "@/components/AccountPicker";
 
+const SCHEDULE_LABELS: Record<RuleSchedule, string> = {
+  continuous: "Selalu (Continuously)",
+  daily: "Harian (Daily)",
+};
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Constants
 // ──────────────────────────────────────────────────────────────────────────────
@@ -26,12 +32,14 @@ const PRESET_CONTENT_TEST: Omit<
   AdRule,
   "id" | "accountIds" | "createdAt" | "updatedAt" | "preset"
 > = {
-  name: "📸 Tes Konten – Matikan jika Spend > $8",
+  name: "📸 Tes Konten – Matikan jika spent > $8",
   enabled: true,
-  conditions: [{ metric: "spend", operator: "GREATER_THAN", value: 8 }],
+  conditions: [{ metric: "spent", operator: "GREATER_THAN", value: 8 }],
   action: "PAUSE_AD",
   level: "AD",
   timeWindow: "today",
+  schedule: "continuous",
+  notifyOnFacebook: true,
   triggeredCount: 0,
   lastRunAt: null,
   lastResult: null,
@@ -47,13 +55,15 @@ const PRESET_CPR_GUARD: Omit<
   action: "PAUSE_AD",
   level: "AD",
   timeWindow: "today",
+  schedule: "continuous",
+  notifyOnFacebook: true,
   triggeredCount: 0,
   lastRunAt: null,
   lastResult: null,
 };
 
 const METRIC_LABELS: Record<RuleMetric, string> = {
-  spend: "Spend ($)",
+  spent: "Spent ($)",
   cpr: "CPR – Cost per Result ($)",
   cpc: "CPC – Cost per Click ($)",
   cpm: "CPM ($)",
@@ -124,6 +134,10 @@ function currencySummary(accounts: AdAccount[]): string {
   return `${entries[0][0]} +${entries.length - 1}`;
 }
 
+function hourLabel(h: number): string {
+  return `${String(h).padStart(2, "0")}:00`;
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Sub-components
 // ──────────────────────────────────────────────────────────────────────────────
@@ -146,7 +160,7 @@ interface ConditionEditorProps {
 }
 function ConditionEditor({ conditions, onChange }: ConditionEditorProps) {
   const addCondition = () => {
-    onChange([...conditions, { metric: "spend", operator: "GREATER_THAN", value: 0 }]);
+    onChange([...conditions, { metric: "spent", operator: "GREATER_THAN", value: 0 }]);
   };
   const removeCondition = (i: number) => {
     onChange(conditions.filter((_, idx) => idx !== i));
@@ -235,11 +249,15 @@ function RuleFormModal({
   const [name, setName] = useState("");
   const [preset, setPreset] = useState<RulePreset>("custom");
   const [conditions, setConditions] = useState<RuleCondition[]>([
-    { metric: "spend", operator: "GREATER_THAN", value: 0 },
+    { metric: "spent", operator: "GREATER_THAN", value: 0 },
   ]);
   const [action, setAction] = useState<RuleAction>("PAUSE_AD");
   const [level, setLevel] = useState<RuleLevel>("AD");
   const [timeWindow, setTimeWindow] = useState<RuleTimeWindow>("today");
+  const [schedule, setSchedule] = useState<RuleSchedule>("continuous");
+  const [dailyFromHour, setDailyFromHour] = useState(0);
+  const [dailyToHour, setDailyToHour] = useState(1);
+  const [notifyOnFacebook, setNotifyOnFacebook] = useState(true);
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [enabled, setEnabled] = useState(true);
 
@@ -252,15 +270,24 @@ function RuleFormModal({
       setAction(editingRule.action);
       setLevel(editingRule.level);
       setTimeWindow(editingRule.timeWindow);
+      setSchedule(editingRule.schedule || "continuous");
+      setDailyFromHour(editingRule.dailyFromHour ?? 0);
+      setDailyToHour(editingRule.dailyToHour ?? 1);
+      setNotifyOnFacebook(editingRule.notifyOnFacebook ?? true);
       setSelectedAccountIds(editingRule.accountIds);
       setEnabled(editingRule.enabled);
     } else {
       setName("");
       setPreset("custom");
-      setConditions([{ metric: "spend", operator: "GREATER_THAN", value: 0 }]);
+      setConditions([{ metric: "spent", operator: "GREATER_THAN", value: 0 }]);
       setAction("PAUSE_AD");
       setLevel("AD");
+      // Defaults match Meta's native rule editor: Today + Continuously.
       setTimeWindow("today");
+      setSchedule("continuous");
+      setDailyFromHour(0);
+      setDailyToHour(1);
+      setNotifyOnFacebook(true);
       // New rules default to the working account set chosen in step 2,
       // not automatically every fetched account.
       setSelectedAccountIds(defaultAccountIds);
@@ -276,12 +303,16 @@ function RuleFormModal({
       setAction(PRESET_CONTENT_TEST.action);
       setLevel(PRESET_CONTENT_TEST.level);
       setTimeWindow(PRESET_CONTENT_TEST.timeWindow);
+      setSchedule(PRESET_CONTENT_TEST.schedule || "continuous");
+      setNotifyOnFacebook(PRESET_CONTENT_TEST.notifyOnFacebook ?? true);
     } else if (p === "cpr_guard") {
       setName(PRESET_CPR_GUARD.name);
       setConditions(PRESET_CPR_GUARD.conditions);
       setAction(PRESET_CPR_GUARD.action);
       setLevel(PRESET_CPR_GUARD.level);
       setTimeWindow(PRESET_CPR_GUARD.timeWindow);
+      setSchedule(PRESET_CPR_GUARD.schedule || "continuous");
+      setNotifyOnFacebook(PRESET_CPR_GUARD.notifyOnFacebook ?? true);
     }
   };
 
@@ -310,6 +341,9 @@ function RuleFormModal({
       action,
       level,
       timeWindow,
+      schedule,
+      ...(schedule === "daily" ? { dailyFromHour, dailyToHour } : {}),
+      notifyOnFacebook,
       createdAt: editingRule?.createdAt || now,
       updatedAt: now,
       triggeredCount: editingRule?.triggeredCount || 0,
@@ -352,7 +386,7 @@ function RuleFormModal({
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               {(
                 [
-                  { key: "content_test", label: "📸 Tes Konten", desc: "Spend > $8 → Ad OFF", color: "orange" },
+                  { key: "content_test", label: "📸 Tes Konten", desc: "spent > $8 → Ad OFF", color: "orange" },
                   { key: "cpr_guard", label: "🛡️ Jaga CPR", desc: "CPR > $3.5 → Ad OFF", color: "red" },
                   { key: "custom", label: "✏️ Custom", desc: "Buat kondisi sendiri", color: "blue" },
                 ] as const
@@ -361,12 +395,12 @@ function RuleFormModal({
                   key={p.key}
                   onClick={() => applyPreset(p.key)}
                   className={`rounded-xl border-2 p-3 text-left transition ${preset === p.key
-                      ? p.color === "orange"
-                        ? "border-orange-400 bg-orange-50"
-                        : p.color === "red"
-                          ? "border-red-400 bg-red-50"
-                          : "border-blue-400 bg-blue-50"
-                      : "border-slate-200 hover:border-slate-300 bg-white"
+                    ? p.color === "orange"
+                      ? "border-orange-400 bg-orange-50"
+                      : p.color === "red"
+                        ? "border-red-400 bg-red-50"
+                        : "border-blue-400 bg-blue-50"
+                    : "border-slate-200 hover:border-slate-300 bg-white"
                     }`}
                 >
                   <div className="text-sm font-bold text-slate-800">{p.label}</div>
@@ -383,7 +417,7 @@ function RuleFormModal({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Contoh: Matikan Ad jika Spend > $8"
+              placeholder="Contoh: Matikan Ad jika spent > $8"
               className="w-full h-10 rounded-xl border border-slate-300 px-3 text-sm text-slate-800 outline-none focus:border-blue-500 transition"
             />
           </div>
@@ -428,7 +462,7 @@ function RuleFormModal({
 
             <div>
               <label className="text-xs font-bold text-slate-600 block mb-1 uppercase tracking-wide">
-                Rentang Waktu
+                Time Range
               </label>
               <select
                 value={timeWindow}
@@ -442,6 +476,92 @@ function RuleFormModal({
                 ))}
               </select>
             </div>
+          </div>
+
+          {/* Schedule — matches Meta's native "Schedule" section */}
+          <div>
+            <label className="text-sm font-bold text-slate-700 block mb-2">Schedule</label>
+            <div className="space-y-2">
+              <label
+                className={`flex items-start gap-2.5 rounded-xl border-2 p-3 cursor-pointer transition ${schedule === "continuous" ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white"
+                  }`}
+              >
+                <input
+                  type="radio"
+                  checked={schedule === "continuous"}
+                  onChange={() => setSchedule("continuous")}
+                  className="mt-0.5"
+                />
+                <div>
+                  <p className="text-sm font-bold text-slate-800">Selalu (Continuously)</p>
+                  <p className="text-xs text-slate-500">
+                    Rule berjalan sesering mungkin (biasanya tiap 30–60 menit).
+                  </p>
+                </div>
+              </label>
+
+              <label
+                className={`flex items-start gap-2.5 rounded-xl border-2 p-3 cursor-pointer transition ${schedule === "daily" ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white"
+                  }`}
+              >
+                <input
+                  type="radio"
+                  checked={schedule === "daily"}
+                  onChange={() => setSchedule("daily")}
+                  className="mt-0.5"
+                />
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-slate-800">Harian (Daily)</p>
+                  <p className="text-xs text-slate-500 mb-2">
+                    Jalankan rule sekali per hari di jam tertentu (Jakarta Time).
+                  </p>
+                  {schedule === "daily" && (
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={dailyFromHour}
+                        onChange={(e) => setDailyFromHour(parseInt(e.target.value, 10))}
+                        className="h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs font-bold text-slate-700 outline-none focus:border-blue-500"
+                      >
+                        {Array.from({ length: 24 }, (_, h) => (
+                          <option key={h} value={h}>
+                            {hourLabel(h)}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="text-xs text-slate-400">s/d</span>
+                      <select
+                        value={dailyToHour}
+                        onChange={(e) => setDailyToHour(parseInt(e.target.value, 10))}
+                        className="h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs font-bold text-slate-700 outline-none focus:border-blue-500"
+                      >
+                        {Array.from({ length: 24 }, (_, h) => (
+                          <option key={h} value={h}>
+                            {hourLabel(h)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              </label>
+            </div>
+          </div>
+
+          {/* Notification — matches Meta's "On Facebook" checkbox */}
+          <div>
+            <label className="text-sm font-bold text-slate-700 block mb-2">Notification</label>
+            <label className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notifyOnFacebook}
+                onChange={(e) => setNotifyOnFacebook(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              <span className="text-sm font-semibold text-slate-700">On Facebook</span>
+              <span className="ml-auto text-xs text-slate-400">
+                Notifikasi saat kondisi rule terpenuhi
+              </span>
+            </label>
           </div>
 
           {/* Account Selection */}
@@ -534,6 +654,7 @@ function RuleCard({
   const [isPushing, setIsPushing] = useState(false);
   const linkedAccounts = accounts.filter((a) => rule.accountIds.includes(a.id));
   const currencyLabel = currencySummary(linkedAccounts);
+  const scheduleLabel = SCHEDULE_LABELS[rule.schedule || "continuous"];
 
   const presetColor =
     rule.preset === "content_test"
@@ -552,10 +673,10 @@ function RuleCard({
     >
       <div
         className={`h-1 w-full ${rule.preset === "content_test"
-            ? "bg-gradient-to-r from-orange-400 to-amber-400"
-            : rule.preset === "cpr_guard"
-              ? "bg-gradient-to-r from-red-500 to-rose-400"
-              : "bg-gradient-to-r from-blue-500 to-indigo-500"
+          ? "bg-gradient-to-r from-orange-400 to-amber-400"
+          : rule.preset === "cpr_guard"
+            ? "bg-gradient-to-r from-red-500 to-rose-400"
+            : "bg-gradient-to-r from-blue-500 to-indigo-500"
           }`}
       />
 
@@ -568,6 +689,11 @@ function RuleCard({
                 {presetLabel}
               </span>
               <StatusBadge enabled={rule.enabled} />
+              {rule.notifyOnFacebook && (
+                <span title="Notifikasi di Facebook aktif" className="text-xs">
+                  🔔
+                </span>
+              )}
             </div>
             <h3 className="mt-1.5 text-sm font-black text-slate-900 leading-snug">{rule.name}</h3>
           </div>
@@ -598,6 +724,16 @@ function RuleCard({
             <span className="font-bold text-slate-700">{ACTION_LABELS[rule.action]}</span>
             <span className="ml-auto text-slate-400 font-medium">
               {LEVEL_LABELS[rule.level]} · {TIME_LABELS[rule.timeWindow]}
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs">
+            <span className="text-slate-400 font-medium">Schedule</span>
+            <span className="font-bold text-slate-700">
+              {scheduleLabel}
+              {rule.schedule === "daily" &&
+                rule.dailyFromHour !== undefined &&
+                rule.dailyToHour !== undefined &&
+                ` (${hourLabel(rule.dailyFromHour)}–${hourLabel(rule.dailyToHour)})`}
             </span>
           </div>
         </div>
@@ -1085,10 +1221,10 @@ export default function AdRulesApp() {
         {globalStatus && (
           <div
             className={`mb-4 flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold transition-all ${globalStatus.type === "success"
-                ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                : globalStatus.type === "error"
-                  ? "border-red-300 bg-red-50 text-red-800"
-                  : "border-blue-300 bg-blue-50 text-blue-800"
+              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+              : globalStatus.type === "error"
+                ? "border-red-300 bg-red-50 text-red-800"
+                : "border-blue-300 bg-blue-50 text-blue-800"
               }`}
           >
             {globalStatus.msg}
@@ -1137,7 +1273,8 @@ export default function AdRulesApp() {
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h2 className="text-sm font-black text-slate-900 mb-1">Tambah Rule Cepat</h2>
                 <p className="text-xs text-slate-500 mb-3">
-                  Template siap pakai, berlaku ke {workingAccountIds.length || accounts.length} akun terpilih
+                  Template siap pakai (Today + Selalu), berlaku ke {workingAccountIds.length || accounts.length} akun
+                  terpilih
                 </p>
                 <div className="space-y-2">
                   <button
@@ -1147,7 +1284,7 @@ export default function AdRulesApp() {
                     <span className="text-xl">📸</span>
                     <div>
                       <div className="text-xs font-black text-orange-800">Tes Konten</div>
-                      <div className="text-[11px] text-orange-600">Spend &gt; $8 → Ad OFF</div>
+                      <div className="text-[11px] text-orange-600">spent &gt; $8 → Ad OFF</div>
                     </div>
                     <span className="ml-auto text-orange-400 font-black">+</span>
                   </button>

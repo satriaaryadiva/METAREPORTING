@@ -11,7 +11,7 @@ interface MetaInsightItem {
   ad_name?: string;
   adset_name?: string;
   campaign_name?: string;
-  spend: string;
+  spent: string;
   cpc?: string;
   cpm?: string;
   ctr?: string;
@@ -29,8 +29,8 @@ function getResults(insight: MetaInsightItem): number {
 
 function getMetricValue(insight: MetaInsightItem, metric: RuleMetric): number {
   switch (metric) {
-    case "spend":
-      return parseFloat(insight.spend || "0") || 0;
+    case "spent":
+      return parseFloat(insight.spent || "0") || 0;
     case "cpc":
       return parseFloat(insight.cpc || "0") || 0;
     case "cpm":
@@ -42,7 +42,7 @@ function getMetricValue(insight: MetaInsightItem, metric: RuleMetric): number {
     case "results":
       return getResults(insight);
     case "cpr": {
-      const spend = parseFloat(insight.spend || "0") || 0;
+      const spend = parseFloat(insight.spent || "0") || 0;
       const results = getResults(insight);
       return results > 0 ? spend / results : 0;
     }
